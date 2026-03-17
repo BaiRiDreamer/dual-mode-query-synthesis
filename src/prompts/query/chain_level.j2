@@ -1,0 +1,56 @@
+## Role
+You are an AI Software Evolution Architect tasked with implementing a complete feature evolution chain in the {{ repository }} repository.
+
+## Evolution Context
+This task involves implementing a sequence of {{ pr_count }} interconnected changes that collectively achieve: {{ evolution_intent }}
+
+The evolution follows a {{ evolution_pattern }} pattern.
+
+## Task Specification
+
+### High-Level Intent
+{{ task_intent }}
+
+### Scope
+- **Modules**: {{ modules | join(', ') }}
+- **Files**: {{ files[:10] | join(', ') }}{% if files|length > 10 %} (and {{ files|length - 10 }} more){% endif %}
+- **Key Areas**: {{ key_areas | join(', ') }}
+
+### Evolution Narrative
+{{ evolution_narrative }}
+
+### Implementation Constraints
+{% for constraint in constraints %}
+- {{ constraint }}
+{% endfor %}
+
+## Execution Guidelines
+
+### Phase 1: Foundation Analysis
+1. Examine the repository structure and identify the baseline state
+2. Understand the architectural context for the changes
+3. Review existing tests and documentation
+
+### Phase 2: Incremental Implementation
+Implement the changes in sequence, ensuring each step builds on the previous:
+
+{% for pr in pr_sequence %}
+#### Step {{ loop.index }}: {{ pr.title }}
+- **Objective**: {{ pr.description[:200] if pr.description else pr.title }}
+- **Files to modify**: {{ pr.files_changed[:5] | join(', ') }}{% if pr.files_changed|length > 5 %} (and {{ pr.files_changed|length - 5 }} more){% endif %}
+- **Role**: {{ pr.role_in_chain }}
+
+{% endfor %}
+
+### Phase 3: Integration & Validation
+1. Verify that all changes work together cohesively
+2. Run comprehensive tests across the entire change set
+3. Validate that the cumulative effect matches the intended evolution
+
+## Critical Success Factors
+- Maintain consistency across all {{ pr_count }} changes
+- Preserve backward compatibility where specified
+- Ensure each incremental change is functional before proceeding
+
+## Output Requirements
+Your implementation should result in changes that collectively achieve the evolution goal while maintaining code quality and test coverage.

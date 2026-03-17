@@ -1,0 +1,45 @@
+# Configuration for Dual-Mode Query Synthesis
+
+github:
+  # GitHub API token (can use environment variable)
+  token: ${GITHUB_TOKEN}
+
+  # Cache directory for API responses
+  cache_dir: .cache/github
+
+llm:
+  # Azure OpenAI configuration
+  api_key: ${AZURE_OPENAI_API_KEY}
+  endpoint: https://gpt-5.4-2026-03-05.openai.azure.com/
+  model: gpt-5.4-2026-03-05
+  api_version: "2024-08-01-preview"
+
+  # LLM parameters
+  temperature: 0.7
+  max_tokens: 4096
+  top_p: 0.95
+
+synthesis:
+  # Maximum context size in bytes (200KB)
+  max_context_bytes: 204800
+
+  # Minimum quality score for chains
+  min_quality_score: 8.0
+
+  # Filter approved chains only
+  filter_approved_only: true
+
+  # Concurrent processing
+  max_workers: 5
+
+templates:
+  # Path to chain-level template
+  chain_level: src/prompts/query/chain_level.j2
+
+  # Path to atomic-level template
+  atomic_level: src/prompts/query/atomic_level.j2
+
+output:
+  # Output directories
+  chain_dir: data/output/chain
+  atomic_dir: data/output/atomic
