@@ -54,9 +54,9 @@ class AtomicLevelBuilder:
         # Build PR metadata
         pr_metadata = PRMetadata(
             pr_id=pr.pr_id,
+            pr_number=pr.pr_number,
             repository=pr.repository,
             title=pr.title,
-            description=pr.description,
             author=pr.author,
             created_at=pr.created_at,
             merged_at=pr.merged_at,
@@ -69,6 +69,8 @@ class AtomicLevelBuilder:
             chain_id=chain_id,
             position_in_chain=position,
             total_prs_in_chain=total_prs,
+            is_first=(position == 1),
+            is_last=(position == total_prs),
             preceding_pr_ids=preceding_pr_ids,
             following_pr_ids=following_pr_ids
         )
