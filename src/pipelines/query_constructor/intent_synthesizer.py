@@ -1,202 +1,196 @@
-"""Intent synthesis for query generation."""
+"""Intent synthesis for query generation using LLM."""
 
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 from ...models.artifacts import PRRecord
-from ...utils.text_utils import extract_action_verb, extract_subject, extract_key_context
 
 
 class IntentSynthesizer:
-    """Synthesizes high-level intent from PR metadata."""
+    """Synthesizes high-level intent from PR metadata using LLM."""
 
     def __init__(self, llm_client=None):
         """
         Initialize intent synthesizer.
 
         Args:
-            llm_client: Optional LLM client for enhanced synthesis
+            llm_client: LLM client for intent generation
         """
         self.llm_client = llm_client
+        self._load_prompts()
+
+    def _load_prompts(self):
+        """Load prompt templates from files."""
+        prompt_dir = Path(__file__).parent.parent.parent / "prompts" / "intent_synthesis"
+
+        # Load chain-level intent prompt
+        chain_intent_path = prompt_dir / "chain_level_intent.txt"
+        if chain_intent_path.exists():
+            with open(chain_intent_path, 'r') as f:
+                self.chain_intent_prompt = f.read()
+        else:
+            self.chain_intent_prompt = self._get_default_chain_intent_prompt()
+
+        # Load atomic-level intent prompt
+        atomic_intent_path = prompt_dir / "atomic_level_intent.txt"
+        if atomic_intent_path.exists():
+            with open(atomic_intent_path, 'r') as f:
+                self.atomic_intent_prompt = f.read()
+        else:
+            self.atomic_intent_prompt = self._get_default_atomic_intent_prompt()
 
     def synthesize_chain_intent(
         self,
+        repository: str,
         topic: str,
         evolution_pattern: str,
         pr_records: List[PRRecord],
         reasoning: str
     ) -> str:
         """
-        Synthesize high-level intent for entire PR chain.
+        Synthesize high-level intent for entire PR chain using LLM.
 
         Args:
+            repository: Repository name
             topic: Chain topic
             evolution_pattern: Evolution pattern (incremental_enhancement, etc.)
             pr_records: List of PR records in chain
             reasoning: LLM judgment reasoning
 
         Returns:
-            High-level intent statement
+            High-level intent statement from user perspective
         """
         if not pr_records:
             return f"Implement {topic}"
 
-        # Extract key information
-        pr_titles = [pr.title for pr in pr_records]
-        first_pr = pr_records[0]
-        last_pr = pr_records[-1]
+        # Fallback to rule-based if no LLM client
+        if not self.llm_client:
+            return self._fallback_chain_intent(topic, pr_records)
 
-        # Build intent based on evolution pattern
-        if evolution_pattern == "incremental_enhancement":
-            intent = self._build_incremental_intent(topic, pr_titles, first_pr, last_pr)
-        elif evolution_pattern == "collaborative_development":
-            intent = self._build_collaborative_intent(topic, pr_titles, reasoning)
-        else:
-            intent = self._build_generic_intent(topic, pr_titles, pr_records)
+        # Format PR sequence information
+        pr_sequence_info = self._format_pr_sequence(pr_records)
 
-        return intent
-
-    def _build_incremental_intent(
-        self,
-        topic: str,
-        pr_titles: List[str],
-        first_pr: PRRecord,
-        last_pr: PRRecord
-    ) -> str:
-        """Build intent for incremental enhancement pattern."""
-        first_action = extract_action_verb(first_pr.title)
-        first_subject = extract_subject(first_pr.title)
-        last_subject = extract_subject(last_pr.title)
-
-        return (
-            f"Systematically {first_action.lower()} {topic} through incremental optimizations, "
-            f"starting with {first_subject}, and progressively extending to {last_subject}."
+        # Build prompt
+        prompt = self.chain_intent_prompt.format(
+            repository=repository,
+            topic=topic,
+            evolution_pattern=evolution_pattern,
+            pr_sequence_info=pr_sequence_info
         )
 
-    def _build_collaborative_intent(
-        self,
-        topic: str,
-        pr_titles: List[str],
-        reasoning: str
-    ) -> str:
-        """Build intent for collaborative development pattern."""
-        # Extract key phrases from reasoning
-        key_phrases = self._extract_key_phrases(reasoning)
-
-        return (
-            f"Implement {topic} through collaborative development, "
-            f"involving {len(pr_titles)} interconnected changes that collectively "
-            f"address {', '.join(key_phrases[:2])}."
-        )
-
-    def _build_generic_intent(
-        self,
-        topic: str,
-        pr_titles: List[str],
-        pr_records: List[PRRecord]
-    ) -> str:
-        """Build generic intent statement."""
-        actions = [extract_action_verb(title) for title in pr_titles]
-        unique_actions = list(dict.fromkeys(actions))  # Preserve order
-
-        return (
-            f"Implement {topic} through {len(pr_records)} related changes that "
-            f"{', '.join(unique_actions[:3]).lower()} the functionality."
-        )
+        # Generate intent using LLM
+        try:
+            intent = self.llm_client.generate(prompt, temperature=0.8, max_tokens=600)
+            return intent.strip()
+        except Exception as e:
+            print(f"Warning: LLM intent synthesis failed: {e}")
+            return self._fallback_chain_intent(topic, pr_records)
 
     def synthesize_atomic_intent(self, pr: PRRecord) -> str:
         """
-        Synthesize intent for a single PR.
+        Synthesize intent for a single PR using LLM.
 
         Args:
             pr: PR record
 
         Returns:
-            Focused intent statement
+            Focused intent statement from user perspective
         """
-        action = extract_action_verb(pr.title)
-        subject = extract_subject(pr.title)
+        # Fallback to rule-based if no LLM client
+        if not self.llm_client:
+            return self._fallback_atomic_intent(pr)
 
-        # Enrich with description if available
-        if pr.description:
-            context = extract_key_context(pr.description, max_length=100)
-            if context:
-                return f"{action} {subject} to {context}"
+        # Format PR information
+        files_changed = ", ".join(pr.files_changed[:10])
+        if len(pr.files_changed) > 10:
+            files_changed += f" (and {len(pr.files_changed) - 10} more)"
 
-        return f"{action} {subject}"
+        # Summarize diff
+        diff_summary = self._summarize_diff(pr.patches)
 
-    def build_evolution_narrative(
-        self,
-        pr_records: List[PRRecord],
-        evolution_pattern: str,
-        reasoning: str
-    ) -> str:
-        """
-        Build evolution narrative for chain-level queries.
-
-        Args:
-            pr_records: List of PR records
-            evolution_pattern: Evolution pattern
-            reasoning: LLM judgment reasoning
-
-        Returns:
-            Evolution narrative
-        """
-        if not pr_records:
-            return ""
-
-        narrative_parts = []
-
-        # Opening
-        narrative_parts.append(
-            f"This evolution follows a {evolution_pattern.replace('_', ' ')} pattern, "
-            f"progressing through {len(pr_records)} stages:"
+        # Build prompt
+        prompt = self.atomic_intent_prompt.format(
+            pr_title=pr.title,
+            pr_description=pr.description or "No description provided",
+            files_changed=files_changed,
+            diff_summary=diff_summary
         )
 
-        # Describe each PR's role
+        # Generate intent using LLM
+        try:
+            intent = self.llm_client.generate(prompt, temperature=0.8, max_tokens=300)
+            return intent.strip()
+        except Exception as e:
+            print(f"Warning: LLM intent synthesis failed: {e}")
+            return self._fallback_atomic_intent(pr)
+
+    def _format_pr_sequence(self, pr_records: List[PRRecord]) -> str:
+        """Format PR sequence for prompt."""
+        lines = []
         for idx, pr in enumerate(pr_records, 1):
-            role = self._infer_pr_role(idx, len(pr_records), pr)
-            narrative_parts.append(
-                f"{idx}. {pr.title} - {role}"
-            )
+            lines.append(f"PR {idx}: {pr.title}")
+            if pr.description:
+                # Truncate long descriptions
+                desc = pr.description[:200] + "..." if len(pr.description) > 200 else pr.description
+                lines.append(f"  Description: {desc}")
+            lines.append(f"  Files changed: {len(pr.files_changed)} files")
+            if pr.files_changed:
+                sample_files = pr.files_changed[:3]
+                lines.append(f"  Sample files: {', '.join(sample_files)}")
+            lines.append("")
 
-        # Closing with reasoning insight
-        key_insight = self._extract_key_insight(reasoning)
-        if key_insight:
-            narrative_parts.append(f"\n{key_insight}")
+        return "\n".join(lines)
 
-        return "\n".join(narrative_parts)
+    def _summarize_diff(self, patches: List[Any]) -> str:
+        """Summarize diff patches."""
+        if not patches:
+            return "No diff information available"
 
-    def _infer_pr_role(self, index: int, total: int, pr: PRRecord) -> str:
-        """Infer the role of a PR in the chain."""
-        if index == 1:
-            return "establishes the foundation"
-        elif index == total:
-            return "completes and refines the implementation"
-        else:
-            action = extract_action_verb(pr.title).lower()
-            return f"{action}s upon the previous work"
+        total_additions = 0
+        total_deletions = 0
 
-    def _extract_key_phrases(self, text: str, max_phrases: int = 3) -> List[str]:
-        """Extract key phrases from text."""
-        # Simple extraction: look for phrases after common markers
-        phrases = []
+        for patch in patches[:5]:  # Sample first 5 patches
+            if hasattr(patch, 'additions'):
+                total_additions += patch.additions
+            if hasattr(patch, 'deletions'):
+                total_deletions += patch.deletions
 
-        # Look for phrases after colons or dashes
-        import re
-        matches = re.findall(r'[:\-]\s*([^.,:;]+)', text)
-        phrases.extend([m.strip() for m in matches if len(m.strip()) > 10])
+        return f"+{total_additions} -{total_deletions} lines across {len(patches)} files"
 
-        # Look for quoted phrases
-        quoted = re.findall(r'"([^"]+)"', text)
-        phrases.extend(quoted)
+    def _fallback_chain_intent(self, topic: str, pr_records: List[PRRecord]) -> str:
+        """Fallback rule-based chain intent generation."""
+        pr_titles = [pr.title for pr in pr_records]
+        return (
+            f"Implement {topic} through {len(pr_records)} related changes: "
+            f"{', '.join(pr_titles[:3])}"
+            + (f", and {len(pr_titles) - 3} more" if len(pr_titles) > 3 else "")
+        )
 
-        return phrases[:max_phrases] if phrases else ["key functionality"]
+    def _fallback_atomic_intent(self, pr: PRRecord) -> str:
+        """Fallback rule-based atomic intent generation."""
+        if pr.description:
+            return f"{pr.title}. {pr.description[:100]}"
+        return pr.title
 
-    def _extract_key_insight(self, reasoning: str) -> str:
-        """Extract key insight from reasoning."""
-        # Look for sentences containing key words
-        sentences = reasoning.split(". ")
-        for sentence in sentences:
-            if any(word in sentence.lower() for word in ["clear", "strong", "explicit", "coherent"]):
-                return sentence.strip() + "."
+    def _get_default_chain_intent_prompt(self) -> str:
+        """Get default chain intent prompt if file not found."""
+        return """Analyze these PRs and reconstruct the original user request:
 
-        return ""
+Repository: {repository}
+Topic: {topic}
+Pattern: {evolution_pattern}
+
+PRs:
+{pr_sequence_info}
+
+Write the original user request (100-400 words):"""
+
+    def _get_default_atomic_intent_prompt(self) -> str:
+        """Get default atomic intent prompt if file not found."""
+        return """Analyze this PR and reconstruct the original user request:
+
+Title: {pr_title}
+Description: {pr_description}
+Files: {files_changed}
+Changes: {diff_summary}
+
+Write the original user request (50-200 words):"""

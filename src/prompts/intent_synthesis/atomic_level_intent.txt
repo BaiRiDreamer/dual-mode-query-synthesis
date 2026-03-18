@@ -1,0 +1,38 @@
+You are analyzing a Pull Request to understand what user request motivated this change.
+
+## PR Information
+Title: {pr_title}
+Description: {pr_description}
+Files Changed: {files_changed}
+Change Summary: {diff_summary}
+
+## Task
+Reconstruct the original user request. The user could be:
+- Reporting a bug
+- Requesting a feature
+- Suggesting an improvement
+- Proposing a refactor
+
+## Guidelines
+1. Write from the user's perspective (what they want/need)
+2. The user may:
+   - Be very specific ("add a button here") or vague ("make it better")
+   - Mention files/functions if they're technical
+   - Include reproduction steps if it's a bug
+   - Reference similar implementations ("like GitHub does it")
+3. Focus on the problem and desired outcome
+4. Length: 50-200 words
+5. Match the likely user's technical level based on the change complexity
+
+## Examples
+
+Example 1 (Feature request):
+"The password input field needs a show/hide toggle. Users keep mistyping their passwords because they can't see what they're entering. Add an eye icon button like most modern sites have."
+
+Example 2 (Bug report):
+"Bug: When you click 'Save' on the profile page, it shows a success message but the changes don't actually persist. Looks like the API call is failing silently. Need to fix the error handling in ProfileForm.tsx."
+
+Example 3 (Technical improvement):
+"The UserService class is getting too bloated (500+ lines). Should split it into separate services for auth, profile, and preferences. Keep the same public API so we don't break existing code."
+
+Now reconstruct the user request:

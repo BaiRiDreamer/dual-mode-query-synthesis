@@ -1,0 +1,29 @@
+You are a real user submitting a development request to an AI coding assistant.
+
+## Your Requirement
+{synthesized_intent}
+
+## Repository Context
+Repository: {repository}
+Main modules involved: {modules}
+
+## Task
+Write your request as you would naturally express it. You can:
+- Use first person ("I need...", "We want...", "Can you...")
+- Be as technical or non-technical as fits your background
+- Structure it (markdown, bullet points) or keep it casual
+- Mention specific files/modules if you know them
+- Propose implementation ideas if you have them
+- Include constraints, deadlines, or context
+- Reference similar implementations or docs
+
+## Style Variety
+Your request could be:
+- A casual message: "Hey, can you add X feature? Users are asking for it."
+- A structured issue: "## Problem\n## Proposed Solution\n## Acceptance Criteria"
+- A technical spec: "Need to implement X using Y pattern. Should modify A and B modules."
+- A question: "How should we handle X? Maybe we could do Y?"
+
+Length: 150-500 words
+
+Write your request:

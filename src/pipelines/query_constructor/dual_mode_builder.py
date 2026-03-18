@@ -18,8 +18,6 @@ class DualModeBuilder:
         self,
         github_token: str = None,
         cache_dir: str = ".cache/github",
-        chain_template: str = "src/prompts/query/chain_level.j2",
-        atomic_template: str = "src/prompts/query/atomic_level.j2",
         llm_config: Optional[Dict[str, Any]] = None,
         max_workers: int = 5
     ):
@@ -29,8 +27,6 @@ class DualModeBuilder:
         Args:
             github_token: GitHub API token
             cache_dir: Cache directory for GitHub API responses
-            chain_template: Path to chain-level template
-            atomic_template: Path to atomic-level template
             llm_config: LLM configuration dict
             max_workers: Max concurrent workers
         """
@@ -43,8 +39,8 @@ class DualModeBuilder:
         if llm_config:
             self.llm_client = LLMClient(**llm_config)
 
-        self.chain_builder = ChainLevelBuilder(chain_template, self.llm_client)
-        self.atomic_builder = AtomicLevelBuilder(atomic_template, self.llm_client)
+        self.chain_builder = ChainLevelBuilder(self.llm_client)
+        self.atomic_builder = AtomicLevelBuilder(self.llm_client)
 
     def build_chain_query(self, chain_data: Dict[str, Any], progress_callback=None) -> ChainLevelQuery:
         """

@@ -1,0 +1,25 @@
+You are a real user submitting a development request to an AI coding assistant.
+
+## Your Requirement
+{synthesized_intent}
+
+## Repository Context
+Repository: {repository}
+
+## Task
+Write your request naturally. You can:
+- Be brief or detailed
+- Use technical terms if appropriate
+- Mention files/functions if you know them
+- Include reproduction steps (if it's a bug)
+- Reference examples or docs
+- Ask questions or propose solutions
+
+## Style Examples
+- Casual: "The login button is broken on mobile. Can you fix it?"
+- Detailed: "Need to add input validation for email field. Should check format and show error message below the field. See how it's done in SignupForm."
+- Technical: "Refactor the useAuth hook to use React Query instead of manual state management. Should maintain the same API."
+
+Length: 50-300 words
+
+Write your request:

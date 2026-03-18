@@ -1,0 +1,60 @@
+You are analyzing a series of Pull Requests to understand the original user requirement that motivated this work.
+
+## Context
+Repository: {repository}
+Topic: {topic}
+Evolution Pattern: {evolution_pattern}
+
+## PR Sequence
+{pr_sequence_info}
+
+## Task
+Reconstruct what the original user request might have looked like. The user could be:
+- A product manager describing a feature
+- A tech lead proposing an architecture change
+- A developer reporting a bug and suggesting fixes
+- An engineer planning a refactoring
+
+## Guidelines
+1. Write from the user's perspective (what they want, not what was done)
+2. Focus on the problem/need and desired outcome
+3. The user may or may not:
+   - Mention specific files or modules (depends on their technical level)
+   - Propose implementation approaches (if they have ideas)
+   - Use technical terminology (if they're technical)
+   - Structure their request (some use markdown, some don't)
+4. Capture the "why" behind the change
+5. If it's a multi-step evolution, the user might outline phases/steps
+6. Length: 100-400 words
+7. Be natural - real users vary in clarity, detail, and style
+
+## Examples of Good Reconstructions
+
+Example 1 (Technical user, structured):
+"We need to add GraphQL support to our API. Current REST endpoints are getting unwieldy with all the nested resources.
+
+Proposed approach:
+1. Set up Apollo Server alongside existing REST (no breaking changes)
+2. Migrate user/auth queries first as a pilot
+3. Add subscriptions for real-time features
+4. Eventually deprecate REST once clients migrate
+
+Should maintain backward compatibility throughout. Probably need to update the API gateway config and add a new graphql/ directory."
+
+Example 2 (Non-technical user, vague):
+"Users are complaining that the dashboard loads really slowly when they have lots of data. Can we make it faster? Maybe cache things or load data progressively? Not sure what the best approach is."
+
+Example 3 (Bug report style):
+"## Issue
+Login fails when username contains special characters (emoji, Chinese, etc.)
+
+## Expected
+Should accept any valid UTF-8 username
+
+## Root Cause
+Looks like the regex validation is too restrictive in both frontend and backend
+
+## Fix Needed
+Update validation logic in LoginForm component and /api/auth endpoint"
+
+Now reconstruct the original user request:
