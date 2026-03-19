@@ -29,6 +29,7 @@ class ContextEnricher:
             List of enriched PR records
         """
         pr_records = []
+        failed_pr_ids = []
 
         for pr_id in pr_ids:
             try:
@@ -36,9 +37,14 @@ class ContextEnricher:
                 if pr_record:
                     pr_records.append(pr_record)
                 else:
-                    print(f"Warning: Could not fetch PR {pr_id}")
+                    failed_pr_ids.append(pr_id)
             except Exception as e:
+                failed_pr_ids.append(pr_id)
                 print(f"Error fetching PR {pr_id}: {e}")
+
+        if failed_pr_ids:
+            failed = ", ".join(failed_pr_ids)
+            raise RuntimeError(f"Failed to fetch complete PR chain. Missing PR data for: {failed}")
 
         return pr_records
 

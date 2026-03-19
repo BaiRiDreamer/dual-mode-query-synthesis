@@ -6,23 +6,44 @@ import time
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 import requests
-from datetime import datetime
+from requests.exceptions import RequestException, Timeout
 
 
 class GitHubClient:
     """Client for interacting with GitHub API."""
 
-    def __init__(self, token: Optional[str] = None, cache_dir: Optional[str] = None):
+    RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
+
+    def __init__(
+        self,
+        token: Optional[str] = None,
+        cache_dir: Optional[str] = None,
+        request_timeout: float = 30.0,
+        max_retries: int = 3,
+        initial_retry_delay: float = 1.0,
+        backoff_factor: float = 2.0,
+        max_retry_delay: float = 60.0
+    ):
         """
         Initialize GitHub client.
 
         Args:
             token: GitHub API token (defaults to GITHUB_TOKEN env var)
             cache_dir: Directory for caching API responses
+            request_timeout: Per-request timeout in seconds
+            max_retries: Number of retries for transient failures
+            initial_retry_delay: Initial retry sleep in seconds
+            backoff_factor: Multiplier applied to each retry wait
+            max_retry_delay: Maximum sleep between retries
         """
         self.token = token or os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
         self.base_url = "https://api.github.com"
         self.session = requests.Session()
+        self.request_timeout = request_timeout
+        self.max_retries = max(0, max_retries)
+        self.initial_retry_delay = max(0.0, initial_retry_delay)
+        self.backoff_factor = max(1.0, backoff_factor)
+        self.max_retry_delay = max_retry_delay
 
         if self.token:
             self.session.headers.update({
@@ -40,7 +61,7 @@ class GitHubClient:
         """Get cache file path for a given key."""
         return self.cache_dir / f"{cache_key}.json"
 
-    def _load_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
+    def _load_from_cache(self, cache_key: str) -> Optional[Any]:
         """Load data from cache if available."""
         cache_path = self._get_cache_path(cache_key)
         if cache_path.exists():
@@ -51,7 +72,7 @@ class GitHubClient:
                 return None
         return None
 
-    def _save_to_cache(self, cache_key: str, data: Dict[str, Any]):
+    def _save_to_cache(self, cache_key: str, data: Any):
         """Save data to cache."""
         cache_path = self._get_cache_path(cache_key)
         try:
@@ -69,42 +90,140 @@ class GitHubClient:
                     print(f"Rate limit low, waiting {wait_time:.0f}s...")
                     time.sleep(wait_time + 1)
 
-    def _make_request(self, url: str, use_cache: bool = True) -> Optional[Dict[str, Any]]:
-        """Make API request with caching and rate limit handling."""
+    def _compute_retry_delay(self, attempt: int, retry_after: Optional[str] = None) -> float:
+        """Compute retry delay with optional Retry-After override."""
+        if retry_after is not None:
+            try:
+                return min(float(retry_after), self.max_retry_delay)
+            except (TypeError, ValueError):
+                pass
+
+        return min(
+            self.initial_retry_delay * (self.backoff_factor ** attempt),
+            self.max_retry_delay
+        )
+
+    def _wait_for_rate_limit(self, headers: Dict[str, Any]) -> float:
+        """Wait until GitHub rate limit resets, if known."""
+        reset_time = headers.get("X-RateLimit-Reset")
+        retry_after = headers.get("Retry-After")
+
+        if retry_after is not None:
+            delay = self._compute_retry_delay(0, retry_after)
+            if delay > 0:
+                print(f"GitHub rate limited, waiting {delay:.1f}s before retrying...")
+                time.sleep(delay)
+            return delay
+
+        if reset_time is None:
+            return 0.0
+
+        try:
+            wait_time = max(float(reset_time) - time.time(), 0.0) + 1.0
+        except (TypeError, ValueError):
+            return 0.0
+
+        if wait_time > 0:
+            print(f"GitHub rate limited, waiting {wait_time:.1f}s before retrying...")
+            time.sleep(wait_time)
+            return wait_time
+
+        return 0.0
+
+    def _request(self, url: str, headers: Optional[Dict[str, str]] = None) -> Optional[requests.Response]:
+        """Make a raw HTTP request with retry, timeout, and rate limit handling."""
+        self._check_rate_limit()
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self.session.get(
+                    url,
+                    headers=headers,
+                    timeout=self.request_timeout
+                )
+
+                self.rate_limit_remaining = int(response.headers.get("X-RateLimit-Remaining", 0))
+                self.rate_limit_reset = int(response.headers.get("X-RateLimit-Reset", 0))
+
+                if response.status_code == 200:
+                    return response
+
+                if response.status_code == 404:
+                    print(f"Warning: Resource not found: {url}")
+                    return None
+
+                is_rate_limited = (
+                    response.status_code in {403, 429}
+                    and response.headers.get("X-RateLimit-Remaining") == "0"
+                )
+                if is_rate_limited:
+                    self._wait_for_rate_limit(response.headers)
+                elif response.status_code in self.RETRYABLE_STATUS_CODES:
+                    delay = self._compute_retry_delay(attempt, response.headers.get("Retry-After"))
+                    if attempt < self.max_retries and delay > 0:
+                        print(
+                            f"GitHub request failed with status {response.status_code}; "
+                            f"retrying in {delay:.1f}s ({attempt + 1}/{self.max_retries})..."
+                        )
+                        time.sleep(delay)
+                    else:
+                        print(f"Warning: API request failed with status {response.status_code}")
+                elif response.status_code == 403:
+                    print(f"Warning: Forbidden GitHub request: {url}")
+                    return None
+                else:
+                    print(f"Warning: API request failed with status {response.status_code}")
+                    return None
+
+            except Timeout:
+                delay = self._compute_retry_delay(attempt)
+                if attempt < self.max_retries:
+                    print(
+                        f"GitHub request timed out; retrying in {delay:.1f}s "
+                        f"({attempt + 1}/{self.max_retries})..."
+                    )
+                    time.sleep(delay)
+                    continue
+                print(f"Warning: GitHub request timed out after {self.max_retries + 1} attempts: {url}")
+                return None
+            except RequestException as e:
+                delay = self._compute_retry_delay(attempt)
+                if attempt < self.max_retries:
+                    print(
+                        f"GitHub request error: {e}; retrying in {delay:.1f}s "
+                        f"({attempt + 1}/{self.max_retries})..."
+                    )
+                    time.sleep(delay)
+                    continue
+                print(f"Warning: API request error after retries: {e}")
+                return None
+
+        return None
+
+    def _make_request(self, url: str, use_cache: bool = True) -> Optional[Any]:
+        """Make JSON API request with caching and retry handling."""
         cache_key = url.replace(self.base_url + "/", "").replace("/", "_")
 
         # Try cache first
         if use_cache:
             cached = self._load_from_cache(cache_key)
-            if cached:
+            if cached is not None:
                 return cached
 
-        # Check rate limit
-        self._check_rate_limit()
+        response = self._request(url)
+        if response is None:
+            return None
 
         try:
-            response = self.session.get(url)
-
-            # Update rate limit info
-            self.rate_limit_remaining = int(response.headers.get("X-RateLimit-Remaining", 0))
-            self.rate_limit_reset = int(response.headers.get("X-RateLimit-Reset", 0))
-
-            if response.status_code == 200:
-                data = response.json()
-                self._save_to_cache(cache_key, data)
-                return data
-            elif response.status_code == 404:
-                print(f"Warning: Resource not found: {url}")
-                return None
-            elif response.status_code == 403:
-                print(f"Warning: Rate limited or forbidden: {url}")
-                return None
-            else:
-                print(f"Warning: API request failed with status {response.status_code}")
-                return None
-        except Exception as e:
-            print(f"Warning: API request error: {e}")
+            data = response.json()
+        except ValueError as e:
+            print(f"Warning: Failed to decode GitHub response JSON: {e}")
             return None
+
+        if use_cache:
+            self._save_to_cache(cache_key, data)
+
+        return data
 
     def get_pr_details(self, repo: str, pr_number: int) -> Optional[Dict[str, Any]]:
         """
@@ -145,15 +264,10 @@ class GitHubClient:
             Unified diff string or None
         """
         url = f"{self.base_url}/repos/{repo}/compare/{base}...{head}"
-
-        try:
-            response = self.session.get(url, headers={"Accept": "application/vnd.github.v3.diff"})
-            if response.status_code == 200:
-                return response.text
+        response = self._request(url, headers={"Accept": "application/vnd.github.v3.diff"})
+        if response is None:
             return None
-        except Exception as e:
-            print(f"Warning: Failed to fetch diff: {e}")
-            return None
+        return response.text
 
     def parse_pr_id(self, pr_id: str) -> tuple[str, int]:
         """
