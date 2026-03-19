@@ -121,8 +121,11 @@ class ChainLevelBuilder:
         )
 
         # Build query artifact
+        repo_slug = pr_records[0].repository.replace("/", "-") if pr_records else "unknown"
+        pr_nums = [str(pr.pr_number) for pr in pr_records]
+        pr_range = f"{pr_nums[0]}-{pr_nums[-1]}" if len(pr_nums) > 1 else pr_nums[0]
         query = ChainLevelQuery(
-            query_id=f"chain-level-{chain_id}",
+            query_id=f"chain--{repo_slug}--{pr_range}",
             chain_metadata=chain_metadata,
             task_specification=task_spec,
             pr_sequence=pr_sequence,

@@ -118,8 +118,9 @@ class AtomicLevelBuilder:
         )
 
         # Build query artifact
+        repo_slug = pr.repository.replace("/", "-")
         query = AtomicLevelQuery(
-            query_id=f"atomic-{chain_id}-pr{position}",
+            query_id=f"atomic--{repo_slug}--{pr.pr_number}",
             pr_metadata=pr_metadata,
             chain_context=chain_context,
             task_specification=task_spec,
