@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from tqdm import tqdm
 
 from ..pipelines.query_constructor import DualModeBuilder
+from ..utils.persistence import atomic_write_text
 from ..utils.resume_utils import ResumePlan, build_resume_plan
 from ..utils.validators import validate_pr_chain, validate_query
 
@@ -24,16 +25,32 @@ def load_config(config_path: str = "config/config.yaml") -> Dict[str, Any]:
         config = yaml.safe_load(f)
 
     # Expand environment variables
-    import os
-    if config.get("llm", {}).get("api_key", "").startswith("${"):
-        env_var = config["llm"]["api_key"][2:-1]
-        config["llm"]["api_key"] = os.getenv(env_var)
+    llm = config.get("llm", {})
+    if "api_key" in llm:
+        llm["api_key"] = _expand_env_placeholder(llm.get("api_key"))
 
-    if config.get("github", {}).get("token", "").startswith("${"):
-        env_var = config["github"]["token"][2:-1]
-        config["github"]["token"] = os.getenv(env_var)
+    github = config.get("github", {})
+    if "token" in github:
+        github["token"] = _expand_env_placeholder(github.get("token"))
+    if "tokens" in github and isinstance(github["tokens"], list):
+        expanded_tokens = []
+        for value in github["tokens"]:
+            expanded_value = _expand_env_placeholder(value)
+            if expanded_value:
+                expanded_tokens.append(expanded_value)
+        github["tokens"] = expanded_tokens
 
     return config
+
+
+def _expand_env_placeholder(value: Any) -> Any:
+    """Expand ${ENV_VAR} placeholders for scalar config values."""
+    import os
+
+    if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+        env_var = value[2:-1]
+        return os.getenv(env_var)
+    return value
 
 
 def load_chains(input_path: Path) -> List[Dict[str, Any]]:
@@ -77,8 +94,7 @@ def save_chain_query(query, output_dir: Path):
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / f"{query.query_id}.jsonl"
 
-    with open(output_file, 'w') as f:
-        f.write(query.model_dump_json(indent=2))
+    atomic_write_text(output_file, query.model_dump_json(indent=2))
 
 
 def save_atomic_queries(queries, output_dir: Path, chain_id: str):
@@ -87,8 +103,7 @@ def save_atomic_queries(queries, output_dir: Path, chain_id: str):
 
     for query in queries:
         output_file = output_dir / f"{query.query_id}.jsonl"
-        with open(output_file, 'w') as f:
-            f.write(query.model_dump_json(indent=2))
+        atomic_write_text(output_file, query.model_dump_json(indent=2))
 
 
 def build_llm_config(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -128,8 +143,47 @@ def build_github_client_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "max_retries": github.get("max_retries", 3),
         "initial_retry_delay": github.get("initial_retry_delay", 1.0),
         "backoff_factor": github.get("backoff_factor", 2.0),
-        "max_retry_delay": github.get("max_retry_delay", 60.0)
+        "max_retry_delay": github.get("max_retry_delay", 60.0),
+        "token_cooldown_buffer_seconds": github.get("token_cooldown_buffer_seconds", 1.0)
     }
+
+
+def build_github_tokens(args, config: Dict[str, Any]) -> List[str]:
+    """Resolve GitHub tokens from CLI args, config, and environment-backed config."""
+    values: List[str] = []
+
+    if args.github_token:
+        for item in args.github_token:
+            values.extend(_split_token_values(item))
+
+    github = config.get("github", {})
+    config_tokens = github.get("tokens", [])
+    if isinstance(config_tokens, list):
+        for item in config_tokens:
+            values.extend(_split_token_values(item))
+
+    config_token = github.get("token")
+    if config_token:
+        values.extend(_split_token_values(config_token))
+
+    deduped = []
+    seen = set()
+    for token in values:
+        if token in seen:
+            continue
+        seen.add(token)
+        deduped.append(token)
+
+    return deduped
+
+
+def _split_token_values(value: str) -> List[str]:
+    """Split comma/newline-separated token inputs."""
+    return [
+        token.strip()
+        for token in str(value).replace("\n", ",").split(",")
+        if token.strip()
+    ]
 
 
 def summarize_resume_plans(
@@ -296,8 +350,8 @@ def main():
 
     parser.add_argument(
         "--github-token",
-        type=str,
-        help="GitHub API token (defaults to GITHUB_TOKEN env var)"
+        action="append",
+        help="GitHub API token; repeat or pass comma-separated values for token pooling"
     )
 
     parser.add_argument(
@@ -419,8 +473,11 @@ def main():
 
     max_workers = args.max_workers or config.get("synthesis", {}).get("max_workers", 5)
 
+    github_tokens = build_github_tokens(args, config)
+
     builder = DualModeBuilder(
-        github_token=args.github_token or config.get("github", {}).get("token"),
+        github_token=github_tokens[0] if github_tokens else None,
+        github_tokens=github_tokens,
         cache_dir=args.cache_dir,
         github_client_config=github_client_config,
         llm_config=llm_config,

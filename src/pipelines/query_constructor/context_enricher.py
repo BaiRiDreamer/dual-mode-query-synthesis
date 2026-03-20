@@ -1,9 +1,10 @@
-"""Context enrichment for PR data."""
-
-from typing import List, Dict, Any, Optional
 from datetime import datetime
-from ...models.artifacts import PRRecord, DiffPatch
+from pathlib import Path
+from typing import Optional, List
+
+from ...models.artifacts import DiffPatch, PRRecord
 from ...utils.github_client import GitHubClient
+from ...utils.persistence import atomic_write_json
 
 
 class ContextEnricher:
@@ -17,6 +18,8 @@ class ContextEnricher:
             github_client: GitHub API client
         """
         self.github = github_client
+        self.pr_cache_dir = self.github.cache_dir.parent / "pr_records"
+        self.pr_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def enrich_pr_records(self, pr_ids: List[str]) -> List[PRRecord]:
         """
@@ -63,6 +66,10 @@ class ContextEnricher:
         except ValueError as e:
             print(f"Invalid PR ID format: {pr_id} - {e}")
             return None
+
+        cached_record = self._load_cached_pr_record(pr_id)
+        if cached_record is not None:
+            return cached_record
 
         # Fetch PR details
         pr_data = self.github.get_pr_details(repo, pr_number)
@@ -115,6 +122,7 @@ class ContextEnricher:
             status=pr_data.get("state", "merged")
         )
 
+        self._save_pr_record(pr_record)
         return pr_record
 
     def compute_cumulative_diff(
@@ -147,6 +155,29 @@ class ContextEnricher:
             return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         except Exception:
             return None
+
+    def _get_pr_cache_path(self, pr_id: str) -> Path:
+        """Build the cache file path for one PR record."""
+        repo, pr_number = self.github.parse_pr_id(pr_id)
+        repo_slug = repo.replace("/", "__")
+        return self.pr_cache_dir / f"{repo_slug}__{pr_number}.json"
+
+    def _load_cached_pr_record(self, pr_id: str) -> Optional[PRRecord]:
+        """Load a cached PRRecord if it exists and looks valid."""
+        cache_path = self._get_pr_cache_path(pr_id)
+        if not cache_path.exists() or cache_path.stat().st_size == 0:
+            return None
+
+        try:
+            payload = cache_path.read_text(encoding="utf-8")
+            return PRRecord.model_validate_json(payload)
+        except Exception:
+            return None
+
+    def _save_pr_record(self, pr_record: PRRecord) -> None:
+        """Persist a normalized PRRecord for resumable fetches."""
+        cache_path = self._get_pr_cache_path(pr_record.pr_id)
+        atomic_write_json(cache_path, pr_record.model_dump(mode="json"), indent=2)
 
     def extract_topic_from_chain(self, pr_records: List[PRRecord]) -> str:
         """

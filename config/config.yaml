@@ -1,8 +1,13 @@
 # Configuration for Dual-Mode Query Synthesis
 
 github:
-  # GitHub API token (can use environment variable)
+  # Single GitHub API token (backward compatible)
   token: ${GITHUB_TOKEN}
+
+  # Optional token pool for concurrent/rate-limit-aware fetching
+  # tokens:
+  #   - ${GITHUB_TOKEN_1}
+  #   - ${GITHUB_TOKEN_2}
 
   # Cache directory for API responses
   cache_dir: .cache/github
@@ -13,6 +18,7 @@ github:
   initial_retry_delay: 2
   backoff_factor: 2.0
   max_retry_delay: 60
+  token_cooldown_buffer_seconds: 1
 
 llm:
   # Azure OpenAI configuration

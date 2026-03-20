@@ -21,6 +21,8 @@ This project extends the daVinci-Agency paradigm to support dual-mode trajectory
 - ⚡ **Concurrent Processing**: Multi-threaded query generation for faster processing
 - 📡 **Streaming Output**: Real-time progress updates during synthesis
 - 💾 **GitHub API Caching**: Automatic caching to reduce API calls
+- 🔐 **GitHub Token Pooling**: Multi-token rate limit aware request scheduling
+- ⏯️ **Resumable Fetching**: Skip already-normalized PR items on reruns
 
 ## Installation
 
@@ -49,6 +51,11 @@ cp /path/to/PR-list-output.jsonl data/input/
 ```bash
 export GITHUB_TOKEN="your_github_token"
 export AZURE_OPENAI_API_KEY="your_azure_openai_key"
+```
+
+**Or use multiple GitHub tokens:**
+```bash
+export GITHUB_TOKENS="token_a,token_b,token_c"
 ```
 
 **Generate both modes:**
@@ -202,6 +209,16 @@ synthesis:
 templates:
   chain_level: prompts/query/chain_level.j2
   atomic_level: prompts/query/atomic_level.j2
+```
+
+You can also configure a token pool:
+
+```yaml
+github:
+  tokens:
+    - ${GITHUB_TOKEN_1}
+    - ${GITHUB_TOKEN_2}
+  token_cooldown_buffer_seconds: 1
 ```
 
 ## Development

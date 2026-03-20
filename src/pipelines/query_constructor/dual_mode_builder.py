@@ -16,6 +16,7 @@ class DualModeBuilder:
     def __init__(
         self,
         github_token: str = None,
+        github_tokens: Optional[List[str]] = None,
         cache_dir: str = ".cache/github",
         github_client_config: Optional[Dict[str, Any]] = None,
         llm_config: Optional[Dict[str, Any]] = None,
@@ -26,6 +27,7 @@ class DualModeBuilder:
 
         Args:
             github_token: GitHub API token
+            github_tokens: GitHub API tokens for pooled access
             cache_dir: Cache directory for GitHub API responses
             github_client_config: Extra GitHub client options
             llm_config: LLM configuration dict
@@ -34,6 +36,7 @@ class DualModeBuilder:
         github_options = dict(github_client_config or {})
         self.github_client = GitHubClient(
             token=github_token,
+            tokens=github_tokens,
             cache_dir=cache_dir,
             **github_options
         )
